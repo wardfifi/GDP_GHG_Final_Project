@@ -1,0 +1,440 @@
+---
+title: "PSTAT 100 - Final Project"
+author: "Jacob Hornby & Sofia Ward"
+date: "March 17, 2025"
+format: pdf
+toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+# Load in Packages
+library(gridExtra)
+library(gt)
+library(kableExtra)
+library(knitr)
+library(tidyverse)
+```
+
+\newpage
+
+# Introduction
+
+Greenhouse gas (GHG) emissions are a critical driver of climate change, with countries around the world grappling with strategies to mitigate their environmental impact while balancing economic growth and increasing population demands.
+
+Understanding the relationship between national **GHG emissions** and socioeconomic factors, such as **Gross Domestic Product (GDP)** and **population size**, is crucial for designing effective climate policies.
+
+GDP serves as a key indicator of a country's economic activity, reflecting industrial output, consumption, and energy use, all of which contribute to emissions. Higher GDP levels often correlate with increased energy consumption, but they may also enable investment in cleaner technologies. Similarly, population size plays a significant role in shaping emissions trends, as larger populations demand more energy, transportation, and industrial output. However, variations in policy, energy efficiency, and economic structure can lead to differing levels of emissions intensity among countries with similar socioeconomic profiles.
+
+![](ghg..jpg)
+
+## Question of Interest
+
+_**What are the top driving factors and key contributing countries responsible for greenhouse gas (GHG) emissions?**_
+
+Historically, developed nations have undergone industrial revolutions that fueled economic expansion but also contributed significantly to environmental degradation. This raises important questions: Are developed nations still the primary contributors to emissions, or have emerging economies become dominant players? Are there hidden relationships between socioeconomics and emissions that go beyond simple economic growth?
+
+By exploring these interactions, we seek to understand how economic development and demographic factors influence environmental sustainability.
+
+\newpage
+
+# Data Description
+
+## Country GHG Historical Emissions (1990 - 2019)
+
+This data set includes **$195$ worldwide country emissions** of all greenhouse gases across sectors; namely energy, industrial processes, agriculture, waste, and land use: change and forestry.
+
+- **30 Years of Data**
+- **Observational Units**: Annual GHG Emissions ($\text{Mt} \text{CO}_{2 \text{e}}$) per Country or Region
+- Due to the different capacity and reporting requirements, **not all countries have a complete inventory**.
+
+| Variable Name | Variable Type | Description |
+|-|-|-|
+| `Country` | Character | Recorded Country Name |
+| `Data source` | Character | Emissions Data Source (`Climate Watch`)
+| `Sector` | Character | Emission Sector Classification (`Total including LUCF`, LUCF: Land Use Change and Forestry) |
+| `Gas` | Character | Measured Type of Gas (`All GHG`) |
+| `Unit` | Character | Emission Measurement Units ($\text{Mt} \text{CO}_{2 \text{e}}$) |
+| `2019`, $\dots$, `1990` | Double | Recorded Emissions for Given Year |
+
+```{r}
+# GHG Emissions Data
+historical_emissions = read_csv("historical_emissions.csv",
+                                na = "N/A")
+```
+
+**Sources and Links:**
+
+- Climate Watch: Open Data
+
+  - [GHG Emissions](https://www.climatewatchdata.org/ghg-emissions?end_year=2019&start_year=1990)
+  - [Methodology](https://files.wri.org/d8/s3fs-public/2024-05/climate-watch-country-greenhouse-gas-emissions-data-methodology.pdf?VersionId=1geU96keSmqZlUjv41FNGB4CLpHQbruN)
+
+\newpage
+
+## GDP Per Capita / Population (1960 - 2019)
+
+Annual GDP per capita and total population for **$264$ countries** at approximately five-year intervals from **1960 to 2019**.
+
+- **60 Years of Data**
+- **Observational Units**: Annual GDP per **Country**.
+- ***Limitations and Exceptions***:
+  - "Current population estimates for developing countries lack reliable recent census data. Population estimates are from demographic modeling and so are susceptible to biases and errors from shortcomings in both the model and the data. Because future trends cannot be known with certainty, population projections have a wide range of uncertainty."
+  - "GDP is the sum of gross value added by all resident producers in the economy plus any product taxes and minus any subsidies not included in the value of the products. **It is calculated without making deductions for depreciation of fabricated assets or for depletion and degradation of natural resources.**"
+
+| Variable Name | Data Set | Variable Type | Unit of Measure | Description |
+|-|-|-|-|-|
+| `Country Name` | Both | Character | N/A | Recorded Country Name |
+| `Country Code` | Both | Character | ISO 3166-1 alpha-3 Code | Standardized Country Code |
+| `Indicator Name` | GDP per Capita | Character | N/A | Data Value Units (`GDP per capita (current US$)`) |
+| `Indicator Code` | GDP per Capita | Character | N/A | Corresponding Indicative Code (`NY.GDP.PCAP.CD`) |
+| `1960`, $\dots$, `2019` | GDP per Capita | Double | US Dollars | Weighted GDP Average of Country |
+| `1960`, $\dots$, `2019` | Population | Double | N/A | Total Country Population |
+
+```{r}
+# Import GDP data
+gdp_per_capita = read_csv("gdp-per-capita.csv",
+                          locale = locale(encoding = 'latin1'),
+                          na = "N/A")
+```
+
+```{r}
+# Import Population data
+population = read_csv('population.csv', 
+                      locale = locale(encoding = 'latin1'),
+                      na = "N/A")
+```
+
+**Sources and Links**:
+
+- World Bank: Open Data
+
+  - [Population](https://data.worldbank.org/indicator/SP.POP.TOTL?end=2019&start=1960&view=chart)
+  - [GDP Per Capita](https://data.worldbank.org/indicator/NY.GDP.PCAP.CD?end=2019&start=1960)
+
+\newpage
+
+# Data Cleaning
+
+## Tidying / Missing Values
+
+To ensure proper analysis and readability, the **data sets** should be **tidied** by:
+
+- **Reshaping them into a grouped column format** (Moving years from columns to rows).
+- **Ensuring years are stored as numeric variables**.
+- **Handling missing values** appropriately.
+
+GHG Historical Emissions needed format reshaping, with years being one column for easy access.
+
+```{r}
+# GHG Emissions Tidying
+emissions_long = historical_emissions |>
+  pivot_longer( # Pivots from wider format to longer
+    cols = starts_with("19") | starts_with("20"), # Selects columns of years
+    names_to = "Year", # Converts to single column
+    values_to = "Emissions") |>
+  mutate(Year = as.numeric(Year))
+
+# Missing Values Check (Should Be 0)
+emissing = sum(is.na(emissions_long))
+
+# 1 missing value; drop it
+emissions_long = emissions_long |>
+  drop_na()
+```
+
+Given the substantial amount of missing values in the GDP per Capita and Population data sets, we aim to maintain data quality while minimizing information loss. To achieve this, we used mean imputation, filling in missing entries with the average GDP per capita specific to each country. The Population data set needed similar formatting and no missing values in order to combine data frames.
+
+```{r}
+# GDP Mean Imputation
+geometric_mean = \(x) prod(x, na.rm = TRUE)^(1 / sum(!is.na(x)))
+
+# GDP Tidying
+gdp_clean = gdp_per_capita |>
+  select(- starts_with("Indicator")) |> # Removes name and code
+  pivot_longer(cols = - starts_with("Country"), # Organizes by name and code
+               names_to = "Year",
+               values_to = "GDP") |>
+  mutate(Year = as.integer(Year)) |> # Converts `Year` to numeric
+  group_by(`Country Name`) |>
+  mutate(GDP = as.numeric(GDP)) |> # Ensures `GDP` is numeric
+  mutate(GDP = 1 + GDP / 100) |> # Normalizes values of `GDP`
+  mutate(GDP = ifelse(is.na(GDP), geometric_mean(GDP), GDP)) |> # Fixes missing values
+  ungroup()
+
+# Check for remaining missing values (should be 0)
+gdp_missing = sum(is.na(gdp_clean))
+
+# Verify dimensions
+gdimensions = n_distinct(gdp_clean$`Country Name`)
+```
+
+```{r}
+# Population Tidying
+pop_clean = population |>
+  pivot_longer(cols = - starts_with("Country"), # Same format as GDP data
+               names_to = "Year",
+               values_to = "Population") |>
+  mutate(Year = as.integer(Year)) |>
+  select(-c(`Country Name`)) |>
+  drop_na() # Removes missing values
+
+# Check dimensions
+popu_mensions = n_distinct(pop_clean$`Country Code`)
+```
+
+## Merging
+
+All three data sets were combined into one informative data set for analysis, void of missing values. The head and tail of the prepared data set appears as follows:
+
+```{r}
+# Merge GDP and Population
+economic_indicators = left_join(gdp_clean, pop_clean,
+                                by = c("Country Code", "Year"))
+
+prepared_data = emissions_long |>
+  inner_join(economic_indicators, by = c("Country" = "Country Name", "Year")) |>
+  drop_na() # Drops any remaining missing values
+
+# Output Table for Head of Data
+prepared_data |>
+  select(- "Data source", - "Sector", - "Gas", - "Unit") |>
+  head(5) |>
+  kable()
+
+# Output Table for Tail of Data
+prepared_data |>
+  select(- "Data source", - "Sector", - "Gas", - "Unit") |>
+  tail(5) |>
+  kable()
+```
+
+\newpage
+
+# Exploratory Data Analysis
+
+Before we dive into individual contributions, let's take a look at global relationships between 1990 and 2019.
+
+```{r}
+global_emissions = prepared_data |>
+  filter(Country == "World")
+
+non_global_data = prepared_data |>
+  filter(Country != "World")
+
+# Identify industry of a country by its GDP
+non_global_data = non_global_data |>
+  group_by(Country) |>
+  mutate(Status = ifelse(max(GDP) > 45, "Industrialized", "Non-Industrialized")) |>
+  ungroup()
+```
+
+```{r}
+# Pivot to facet wrap graphs
+global_2 = global_emissions |>
+  pivot_longer(cols = c(GDP, Emissions),
+               names_to = "Socioeconomy",
+               values_to = "Value")
+
+ggplot(global_2, aes(x = Year, y = Value, group = Socioeconomy)) +
+  geom_point(aes(size = Population, color = Socioeconomy), alpha = 0.6) + # Pop. Points
+  geom_line(aes(color = Socioeconomy), linewidth = 2) + # Lines for GDP / Emissions
+  labs(title = "Global GDP and GHG Emissions (1990 - 2019)", x = "Year", y = "",
+       size = "Population (Billions)") +
+  facet_wrap(~ Socioeconomy, scales = "free_y") +
+  scale_color_manual(values = c("GDP" = "yellowgreen", "Emissions" = "red4")) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+The figure above demonstrates side-by-side plots of global GHG emissions and GDP per capita, reflecting a similar exponential increase from 2000 to 2010.
+
+From 1995 to 2005, a plateau in GDP proceeds an apparent spike in GHG levels, possibly due to many growing countries' heavy coal usage to power their industrial expansion. The World Trade Organization, established in 1995, aids with global trade, industrial production and economic growth, especially in developing countries. With trade networks established and populations growing by the 2000's, GHG byproducts continue to steadily rise.
+
+\newpage
+
+Let's take a closer look at the industrialized countries, specifically the early, late and ongoing nations. The classifier we will be using to determine a country's industrialization status is based on whether their normalized GDP per capita is greater than or equal to $45$:
+
+```{r}
+# Summarize Emissions by Industry
+emissions_industry = non_global_data |>
+  group_by(Year, Status) |>
+  summarize(Total_Emissions = sum(Emissions))
+
+# Box Plot of GHG Emissions by Industry
+industry_1 = ggplot(non_global_data, aes(x = Status, y = log(Emissions),
+                                         fill = Status)) +
+  geom_boxplot(alpha = 0.6) +
+  labs(title = "Logarithmic",
+       y = expression("Log of GHG Emissions (MtCO"[2]*"e)")) +
+  scale_fill_manual(values = c("Industrialized" = "goldenrod",
+                               "Non-Industrialized" = "slateblue")) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Line Plot of Total GHG by Industry
+industry_2 = ggplot(emissions_industry, aes(x = Year, y = Total_Emissions,
+                                            color = Status)) +
+  geom_line(size = 1.2) +
+  labs(title = "Normalized", x = "Year", y = "") +
+  scale_color_manual(values = c("Industrialized" = "goldenrod",
+                                "Non-Industrialized" = "slateblue"),
+                     labels = c("Non-Industrialized" = "Not")) +
+  theme_minimal() +
+  theme(legend.position = "bottom") # Moves legend to bottom of graph
+
+# Display the plots side-by-side
+grid.arrange(industry_1, industry_2, ncol = 2,
+             top = "Industrial Status vs. GHG Emissions (1990 - 2019)")
+```
+
+These plots demonstrate the aggregated annual GHGs from selected industrialized and non-industrialized countries from 1990 to 2019. Industrialized countries contribute more GHG emissions on average than non-industrialized countries. This could be due to an industrialized country's economy being more capital-intensive and resource-heavy than those in developing nations.
+
+\newpage
+
+Within these industrialized and non-industrialized countries, which ones have emitted the largest amount of greenhouse gases? Looking at the data from the most recent year of 2019, we obtain the following top ten each:
+
+```{r}
+# Filter the data set to 2019 data only
+emissions_2019 = non_global_data |>
+  filter(Year == 2019) |>
+  arrange(desc(Emissions))
+
+# Industrialized Country GHG Emissions
+contributors_ind = emissions_2019 |>
+  filter(Status == "Industrialized") |>
+  head(10) # Top 10 Observations
+
+# Non-Industrialized Country GHG Emissions
+contributors_non = emissions_2019 |>
+  filter(Status == "Non-Industrialized") |>
+  head(10) # Top 10 Observations
+
+# Bar Plot of Industrialized Countries
+plot.contributors_ind = ggplot(contributors_ind, aes(x = reorder(Country, Emissions),
+                                                     y = Emissions)) +
+  geom_col(fill = "darkmagenta") +
+  coord_flip() +
+  scale_y_continuous(limits = c(0, 13000)) +
+  labs(title = "Industrialized",
+       x = "", y = expression("MtCO"[2]*"e Emissions")) +
+  theme_minimal()
+
+# Bar Plot of Non-Industrialized Countries
+plot.contributors_non = ggplot(contributors_non, aes(x = reorder(Country, Emissions),
+                                                     y = Emissions)) +
+  geom_col(fill = "darkturquoise") +
+  coord_flip() +
+  scale_y_continuous(limits = c(0, 13000)) +
+  labs(title = "Non-Industrialized",
+       x = "", y = expression("MtCO"[2]*"e Emissions")) +
+  theme_minimal()
+
+# Display the plots side-by-side
+grid.arrange(plot.contributors_ind, plot.contributors_non, ncol = 2,
+             top = "Top 10 GHG Emitting Countries in 2019")
+```
+
+```{r}
+# Function to calculate 2019 GHG emissions value
+ghg.emit_19 = function(country, data = emissions_2019) {
+  data = data |>
+    filter(Country == country)
+  
+  return(data$Emissions)
+}
+```
+
+Based on the above bar plots, we can see that China has by and far the largest amount of GHG emissions for any country, with approximately $`r ghg.emit_19("China")`$; the United States' emission value of $`r ghg.emit_19("United States")`$ isn't even a close second. For non-industrialized countries, India's $`r ghg.emit_19("India")`$ and Indonesia's $`r ghg.emit_19("Indonesia")`$ top their pack pretty steadily; both are larger than the remaining top eight industrialized country emissions, which in turn are higher than the other top eight non-industrialized country emissions.
+
+It's important to note the classification of "Industrialized" vs. "Non-Industrialized" countries: the largest normalized GDP per year as being higher than $45$. As such, India and Indonesia are classified as "Non-Industrialized", when in reality they are technically considered to be newly-industrialized countries; such is also the case for Brazil ($\text{2019 GHG Emissions} = `r ghg.emit_19("Brazil")`$), Mexico ($\text{2019 GHG Emissions} = `r ghg.emit_19("Mexico")`$), and South Africa ($\text{2019 GHG Emissions} = `r ghg.emit_19("South Africa")`$) among others.
+
+\newpage
+
+The previous plots demonstrate that the normalized GDP per capita appears to have a generally positive relationship with a country's GHG emissions per year, but what about when we throw the country's population into the mix? Once again, we will be analyzing with the year 2019, wherein most countries would have had their highest population yet:
+
+```{r}
+# Scatter Plot of Population vs. GHG Emissions
+plot.population = ggplot(emissions_2019, aes(x = log(Population),
+                            y = log(Emissions))) +
+  geom_point(col = "tan1") + # Logarithms allow for straighter lines
+  geom_smooth(method = "lm", color = "orchid3", linetype = "dashed", se = FALSE) +
+  geom_hline(yintercept = 0, color = "royalblue4") +
+  labs(title = "Population",
+       x = "log(Population)", y = expression("log(MtCO"[2]*"e Emissions)")) +
+  theme_minimal()
+
+# Scatter Plot of GDP per Capita vs. GHG Emissions
+plot.gdp = ggplot(emissions_2019, aes(x = log(GDP), y = log(Emissions))) +
+  geom_point(col = "green2") +
+  geom_smooth(method = "lm", color = "orchid3", linetype = "dashed", se = FALSE) +
+  geom_hline(yintercept = 0, color = "royalblue4") +
+  labs(title = "GDP",
+       x = "log(GDP)", y = "") +
+  theme_minimal()
+
+# Display the plots side-by-side
+grid.arrange(plot.population, plot.gdp, ncol = 2,
+             top = "Logarithmic Predictors vs. GHG Emissions (2019)")
+```
+
+Logarithmic transformations were used to ensure relationships are detailed in a concise manner void of outliers.
+
+The left plot demonstrates the relationship between the logarithmic population and GHG emissions in 2019. After transformation, values cluster into a straight, positive form (represented with the magenta-colored, dotted regression line), indicating that the variables have a positive relationship with one another: where there's more people, there's generally more emissions. The intercept of the regression starts at a logarithmic $\text{MtCO}_{2 \text{e}}$ value of less than $0$ (the $x$-axis is represented by the blue-colored line), indicating that countries with low populations have reduced (or perhaps even little to no) GHG emissions than those with larger populations.
+
+By contrast, the right plot demonstrates the relationship between the logarithmic normalized GDP per capita and GHG emissions in 2019. Compared to the population, transformed values are more scattered and inconsistent in relation; however, the regression line showcases a positive relationship between our variables, just like our initial observations when comparing industrialized countries. On average, the greater GDP a country has, the more greenhouse gases the country ends up emitting. Although the regression's intercept is higher than with the population, the coefficient and slope are significantly weaker, meaning that the population has a larger influence on the emission of greenhouse gases.
+
+\newpage
+
+Given everything we have analyzed up to this point, we can finally determine the relationship between each country, its maximum gross domestic product per capita, and population along with the total number of emissions from 1990 to 2019.
+
+Our top ten and bottom five countries with the largest amount of greenhouse gas emissions are as follows:
+
+```{r}
+# Total Emissions Data Set
+emissions.total = non_global_data |>
+  group_by(Country) |>
+  summarize(Emissions = sum(Emissions, na.rm = TRUE),
+            Population = last(Population),
+            `Max GDP` = max(GDP, na.rm = TRUE)) |>
+  mutate(`Industrialized?` = ifelse(`Max GDP` > 45, "Yes", "No")) |>
+  arrange(desc(Emissions))
+
+# Output Table for Top 10
+emissions.total |>
+  head(10) |>
+  kable()
+
+# Output Table for Bottom 5
+emissions.total |>
+  tail(5) |>
+  kable()
+```
+
+Even when all years are put into play, it's clear that the country's population plays a stronger part in greenhouse gas emissions than the maximum gross domestic product per capita; the top six all have populations greater than $100,000,000$ people, while the bottom five all have populations less than $1,000,000$ people! By comparison, lower ranking countries such as Fiji and Nauru have larger gross domestic products per capita than India or Indonesia, and otherwise, Brazil and China are the only two countries in the top ten with a maximum gross domestic product per capita value of less than $200$.
+
+\newpage
+
+# Summary
+
+This project, utilizing several Exploratory Data Analysis techniques, aimed to analyze the relationship between greenhouse gas emissions and socioeconomic issues among several countries. Considering greenhouse gases are a leading contributor to climate change, with elements such as a steadily increasing world population and industrialized economic activity not helping the case, the natural first step to combating these issues is to recognize the significance of these relationships to make plans going forward.
+
+Based on our exploratory data analysis, the socioeconomic factor with the strongest relationship with national greenhouse gas emissions is the country's population. Many of the globe's most populous countries, including China and India with over $1,000,000,000$ each by 2019, have exhibited significantly larger greenhouse gas emissions over the course of a $30$ period, with China topping the charts at over $200,000$ emissions of $\text{MtCO}_{2 \text{e}}$ and the United States falling close behind at over $175,000$ emissions. In contrast, countries with significantly lower populations, such as many Oceanic countries of less than $1,000,000$ people each, have emitted little to no $\text{MtCO}_{2 \text{e}}$ over the course of the 1990's, 2000's and 2010's.
+
+However, the gross domestic product per capita of a country did not render as insignificant. Many industrialized countries, defined as having a normalized GDP of over $45$, maintained consistently stronger emission averages than the majority of non-industrialized countries, once more a generally positive relationship. However, certain countries classified as "Non-Industrialized" due to their low GDPs, particularly India and Indonesia, fared stronger greenhouse gas emissions than even most other "Industrialized" countries, most likely due to their larger population and status as a newly-industrialized country.
+
+Despite the project achieving its goals of determining the primary causes of greenhouse gas emissions and which countries exhibit the most of them, it is not without its limitations. The most significant of them would have to be the classification of country industrialization, a factor in which requirements have no agreed consensus. The choice to use $45$ as the threshold for a normalized GDP value came from the data itself than anything else, leading to a number of countries classified as either "Industrialized" or even "Non-Industrialized" to be either incorrect or really be newly-industrialized countries instead. On top of that, many correlations and conclusions are made based on plots and raw data on more recent years: stronger usage of machine learning models and larger data could contribute to a more accurate portrayal of predictors with appropriate statistical significance and interpretability.
+
+While it can be difficult to cease climate change due to a number of factors out of our control, the correlation between population and greenhouse gas emissions can indeed be addressed. However, with the very few amount of places to explore left on Earth, one may need to consider… would it be smarter to advise space travel at this point, reduce the amount of pregnancies in larger communities, or simply distribute the population more equally? And would any of those methods technically be applicable considering the general hesitance or lack of substantial wealth from the general population?
+
+\newpage
+
+# References
+
+- **Climate Watch**: [https://www.climatewatchdata.org/](https://www.climatewatchdata.org/)
+- **World Bank Group: Open Data**: [https://data.worldbank.org/](https://data.worldbank.org/)
+- **World Resources Institute**: [https://www.wri.org/](https://www.wri.org/)
+- **World Trade Organization**: [https://www.wto.org/](https://www.wto.org/)
